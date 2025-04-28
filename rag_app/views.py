@@ -5,11 +5,12 @@ from .models import PDFDocument
 from rag_pipeline.ingest import ingest_pdf, ingest_all_pdfs
 from rag_pipeline.query import query_knowledge
 import os
+import traceback
 
 def home(request):
     form = PDFUploadForm()
     answer = ""
-    question = "" 
+    question = ""
     
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -17,22 +18,31 @@ def home(request):
         if action == 'upload':
             form = PDFUploadForm(request.POST, request.FILES)
             if form.is_valid():
-                # 儲存上傳的多個 PDF 檔案
-                files = request.FILES.getlist('pdf_file')
-                upload_dir = 'media/pdfs/'
-                os.makedirs(upload_dir, exist_ok=True)
+                try:
+                    # 儲存上傳的多個 PDF 檔案
+                    files = request.FILES.getlist('pdf_file')
+                    upload_dir = 'media/pdfs/'
+                    os.makedirs(upload_dir, exist_ok=True)
 
-                # 儲存檔案並記錄處理結果
-                for f in files:
-                    file_path = os.path.join(upload_dir, f.name)
-                    with open(file_path, 'wb') as f_dest:
-                        for chunk in f.chunks():
-                            f_dest.write(chunk)
+                    # 儲存檔案並記錄處理結果
+                    for f in files:
+                        if not f.name.endswith('.pdf'):
+                            messages.error(request, f"{f.name} 不是有效的 PDF 檔案！")
+                            return redirect('home')
 
-                # 處理並將所有 PDF 檔案嵌入知識庫
-                results = ingest_all_pdfs(upload_dir)
-                for result in results:
-                    messages.success(request, result)
+                        file_path = os.path.join(upload_dir, f.name)
+                        with open(file_path, 'wb') as f_dest:
+                            for chunk in f.chunks():
+                                f_dest.write(chunk)
+
+                    # 處理並將所有 PDF 檔案嵌入知識庫
+                    results = ingest_all_pdfs(upload_dir)
+                    for result in results:
+                        messages.success(request, result)
+
+                except Exception as e:
+                    messages.error(request, "上傳 PDF 時發生錯誤！")
+                    print(traceback.format_exc())
 
                 return redirect('home')
             else:
@@ -51,9 +61,13 @@ def home(request):
 {question}
 """
 
-                result = query_knowledge(prompt)
-                answer = result.get("answer", "")
-                sources = result.get("sources", [])
+                try:
+                    result = query_knowledge(prompt)
+                    answer = result.get("answer", "")
+                    sources = result.get("sources", [])
+                except Exception as e:
+                    messages.error(request, "查詢過程中發生錯誤！")
+                    print(traceback.format_exc())
             else:
                 messages.error(request, "請輸入問題進行查詢！")
 
